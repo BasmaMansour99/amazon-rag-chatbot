@@ -210,7 +210,6 @@ Answer:"""
 # 5. User Interface Configuration
 # ==========================================
 st.title("AR")
-st.write("Extract information regarding product features, quality, or customer feedback directly from database records.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
