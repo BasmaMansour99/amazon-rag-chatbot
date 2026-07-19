@@ -147,7 +147,7 @@ Answer:"""
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama-3.2-3b-preview",
+        "model": "openai/gpt-oss-20b",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0
     }
