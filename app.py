@@ -30,21 +30,29 @@ def init_rag_system():
     
     # Data Cleaning pipeline
     df = raw_df.copy()
+    
+    # Convert all columns to string and strip spaces to prevent unintended dropping
+    for col in REQUIRED_COLUMNS:
+        df[col] = df[col].astype(str).str.strip()
+        
     df = df.drop_duplicates().reset_index(drop=True)
     df = df.drop_duplicates(subset=["id", "reviews.username", "reviews.text"]).reset_index(drop=True)
-    df["reviews.text"] = df["reviews.text"].astype(str).str.strip()
+    
+    # Filter out rows where review text is actually empty or missing
     df = df[~df["reviews.text"].isin(["", "nan", "None", "none", "NaN"])].reset_index(drop=True)
     
-    for col in ["name", "brand", "categories", "reviews.title", "reviews.username"]:
-        df[col] = df[col].fillna("Unknown").astype(str).str.strip()
-        df.loc[df[col] == "", col] = "Unknown"
+    # Fill remaining missing fields with 'Unknown' instead of dropping the row
+    for col in ["id", "asins", "name", "brand", "categories", "reviews.title", "reviews.username"]:
+        df[col] = df[col].replace(["", "nan", "NaN", "None"], "Unknown")
         
     df["reviews.rating"] = pd.to_numeric(df["reviews.rating"], errors="coerce")
-    df["reviews.rating"] = df["reviews.rating"].fillna(df["reviews.rating"].median())
+    df["reviews.rating"] = df["reviews.rating"].fillna(5.0)
     
-    df["reviews.didPurchase"] = df["reviews.didPurchase"].fillna(False).astype(bool)
-    df["reviews.doRecommend"] = df["reviews.doRecommend"].fillna(False).astype(bool)
-    df = df.dropna(subset=["id", "asins"]).reset_index(drop=True)
+    df["reviews.didPurchase"] = df["reviews.didPurchase"].replace(["True", "TRUE", "true", "1"], True)
+    df["reviews.didPurchase"] = df["reviews.didPurchase"].replace(["False", "FALSE", "false", "0", "Unknown"], False).astype(bool)
+    
+    df["reviews.doRecommend"] = df["reviews.doRecommend"].replace(["True", "TRUE", "true", "1"], True)
+    df["reviews.doRecommend"] = df["reviews.doRecommend"].replace(["False", "FALSE", "false", "0", "Unknown"], False).astype(bool)
     
     # Generate Embeddings & Build FAISS Index
     texts_to_embed = (df["reviews.title"] + ". " + df["reviews.text"]).tolist()
@@ -64,7 +72,7 @@ with st.spinner("Initializing Amazon Reviews Database... Please wait."):
 # ==========================================
 # 3. RAG Core Engine & Generation
 # ==========================================
-def ask_llm(query, k=3):
+def ask_llm(query, k=5):
     # Retrieval step
     query_vector = embedding_model.encode([query]).astype('float32')
     D, I = db.search(query_vector, k)
