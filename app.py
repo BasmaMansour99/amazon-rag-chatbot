@@ -2,22 +2,33 @@
 import pandas as pd
 import numpy as np
 import faiss
-import re
 import requests
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 
 # ==========================================
-# 1. Groq API Configuration (Llama 3.2 Cloud)
+# 0. Streamlit Page Configuration
 # ==========================================
-# Security Note: It is recommended to use st.secrets["GROQ_API_KEY"] instead of hardcoding it here.
-# Make sure to replace this with your actual valid API key.
+# Must be the very first Streamlit command called after imports
+st.set_page_config(page_title="Amazon Reviews System", layout="wide")
+
+# ==========================================
+# 1. Groq API Configuration
+# ==========================================
+# Fetch the secret API Key from Streamlit Secrets Management
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("Configuration Error: 'GROQ_API_KEY' not found in Streamlit Secrets. Please configure your deployment application environment variables.")
+    st.stop()
+
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 # ==========================================
 # 2. Chunking Helper Functions
 # ==========================================
 def chunk_text(text, chunk_size=38, overlap=10):
+    """
+    Splits input text into standardized token chunks based on explicit word counts.
+    """
     words = text.split()
     if not words:
         return []
@@ -36,8 +47,16 @@ def chunk_text(text, chunk_size=38, overlap=10):
 # ==========================================
 @st.cache_resource
 def init_search_system():
-    # Load embedding model
-    embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    """
+    Validates files, processes input documents, indexes text structures using FAISS, 
+    and handles downstream initialization component failures gracefully.
+    """
+    # Load embedding model with explicit error handling
+    try:
+        embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    except Exception as e:
+        st.error(f"Initialization Error: Failed to load SentenceTransformer model. Details: {str(e)}")
+        st.stop()
 
     # Read the data file from the current directory
     DATA_PATH = "1429_1 - Copy.csv"
@@ -46,7 +65,15 @@ def init_search_system():
         "reviews.didPurchase", "reviews.doRecommend",
         "reviews.rating", "reviews.title", "reviews.text", "reviews.username",
     ]
-    raw_df = pd.read_csv(DATA_PATH, usecols=REQUIRED_COLUMNS)
+    
+    try:
+        raw_df = pd.read_csv(DATA_PATH, usecols=REQUIRED_COLUMNS)
+    except FileNotFoundError:
+        st.error(f"Data Access Error: Target dataset file '{DATA_PATH}' could not be located in the working directory.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Data Processing Error: Unable to read target dataset file. Details: {str(e)}")
+        st.stop()
 
     # Data Cleaning pipeline
     df = raw_df.copy()
@@ -83,6 +110,11 @@ def init_search_system():
     # Convert chunked data into a new DataFrame
     df_chunks = pd.DataFrame(chunked_records)
 
+    # Check if chunks were successfully generated
+    if df_chunks.empty:
+        st.error("Processing Error: No valid text records were found or generated after data cleaning.")
+        st.stop()
+
     # Generate Embeddings for the text chunks
     texts_to_embed = df_chunks["chunk_text"].tolist()
     embeddings = embedding_model.encode(texts_to_embed, batch_size=256, show_progress_bar=False)
@@ -102,6 +134,9 @@ with st.spinner("Initializing Amazon Reviews Database... Please wait."):
 # 4. Search Engine & Content Generation
 # ==========================================
 def query_database(query, k=4): 
+    """
+    Executes similarity matching against the FAISS matrix and structures context for LLM evaluation.
+    """
     # Retrieval step
     query_vector = embedding_model.encode([query]).astype('float32')
     D, I = db.search(query_vector, k)
@@ -141,31 +176,39 @@ Customer review excerpts:
 
 Answer:"""
 
-    # Request payload for Groq Cloud
+    # Request payload configuration targeting Groq Llama-3.1-8b-instant
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "openai/gpt-oss-20b",
+        "model": "llama-3.1-8b-instant",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0
     }
 
     try:
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=30)
+        # Implemented an extended 60-second execution window for Cloud environments
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions", 
+            headers=headers, 
+            json=payload, 
+            timeout=60
+        )
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content'].strip()
         else:
-            # Temporary error reporting for connection status
-            return f"Error from system API: {response.status_code} - {response.text}"
+            return f"Error from system API: HTTP {response.status_code} - {response.text}"
+    except requests.exceptions.Timeout:
+        return "Insufficient information. (System Connection Error: Remote API request timed out after 60 seconds.)"
+    except requests.exceptions.RequestException as e:
+        return f"Insufficient information. (System Connection Error: Network exception encountered. Details: {str(e)})"
     except Exception as e:
         return f"Insufficient information. (System Connection Error: {str(e)})"
 
 # ==========================================
 # 5. User Interface Configuration
 # ==========================================
-st.set_page_config(page_title="Amazon Reviews System", layout="wide")
 st.title("Amazon Product Reviews Search Engine")
 st.write("Extract information regarding product features, quality, or customer feedback directly from database records.")
 
