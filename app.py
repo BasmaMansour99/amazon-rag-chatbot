@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 # 0. Streamlit Page Configuration
 # ==========================================
 # Must be the very first Streamlit command called after imports
-st.set_page_config(page_title="Amazon Reviews System", layout="wide")
+st.set_page_config(page_title="AR", layout="wide")
 
 # ==========================================
 # 1. Groq API Configuration
@@ -209,7 +209,7 @@ Answer:"""
 # ==========================================
 # 5. User Interface Configuration
 # ==========================================
-st.title("Amazon Product Reviews Search Engine")
+st.title("AR")
 st.write("Extract information regarding product features, quality, or customer feedback directly from database records.")
 
 if "messages" not in st.session_state:
