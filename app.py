@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # ==========================================
 # Security Note: It is recommended to use st.secrets["GROQ_API_KEY"] instead of hardcoding it here.
 # Make sure to replace this with your actual valid API key.
-GROQ_API_KEY = "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" 
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 # ==========================================
 # 2. Chunking Helper Functions
